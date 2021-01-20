@@ -19,18 +19,23 @@ def sync_new_jira_to_jira(new_jira_server, new_jira, bug, jira, project_key, yes
     attachments = bug.fields.attachment
 
     def create_issue(bug):
+        summary = '[{}][{}]{}'.format(bz_id.replace('-', '#'),
+                                      bug.fields.issuetype.name,
+                                      bug.fields.summary)
         issue = jira.create_issue(
             project=project_key,
-            summary='[{}]{}'.format(bz_id.replace('-','#'), bug.fields.summary),
+            summary=summary,
             description=bug.fields.description,
-            issuetype={'name': 'Bug'},
+            issuetype={'name': 'Task'},
             priority={'name': bug.fields.priority.name},
-            customfield_14100=bz_id
         )
+        jira.create_issue_link(type='Relates', inwardIssue=issue.key, outwardIssue=bz_id)
         issue.update(assignee={'name': None})
         return issue
 
-    issues = jira.search_issues('project = %s AND "Mantis ID" ~ "%s"' % (project_key, bz_id))
+    issues_found_by_mantis_id = jira.search_issues('project = %s AND "Mantis ID" ~ "%s"' % (project_key, bz_id))
+    issues_found_by_related_task = jira.search_issues('project = %s AND issue in linkedIssues(%s, "relates to")' % (project_key, bz_id))
+    issues = issues_found_by_mantis_id + issues_found_by_related_task
     if issues:
         issue = issues[0]
         issue = jira.issue(issue.key)
@@ -249,13 +254,17 @@ def sync_mantis_to_jira(mantis_server, username, passwd, mantis_id, jira, projec
         issue = jira.create_issue(project=project_key,
                                   summary='[Mantis#%s] ' % bug.id + bug.summary,
                                   description=bug.description,
-                                  issuetype={'name': 'Bug'},
-                                  priority={'name': 'P3'},
-                                  customfield_14100='Mantis-' + str(bug.id))
+                                  issuetype={'name': 'Task'},
+                                  priority={'name': 'P3'})
+        title = 'Mantis-' + str(bug.id)
+        url = '%s/view.php?id=%s' % (mantis_server, mantis_id)
+        jira.add_simple_link(issue, {'title': title,'url': url})
         issue.update(assignee={'name': None})
         return issue
 
-    issues = jira.search_issues('project = %s AND "Mantis ID" ~ "Mantis-%s"' % (project_key, mantis_id))
+    issues_found_by_mantis_id = jira.search_issues('project = %s AND "Mantis ID" ~ "Mantis-%s"' % (project_key, mantis_id))
+    issues_found_by_related_task = jira.search_issues('project = %s AND issueFunction in linkedIssuesOfRemote("title", "Mantis-%s")' % (project_key, mantis_id))
+    issues = issues_found_by_mantis_id + issues_found_by_related_task
     if issues:
         issue = issues[0]
         issue = jira.issue(issue.key)
